@@ -5,23 +5,25 @@ import {
   query,
   onSnapshot,
   limit,
+  startAfter,
 } from 'firebase/firestore';
 import { authentication, database } from 'libs/firebase';
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, RefreshControl } from 'react-native';
-import { GiftedChat } from 'react-native-gifted-chat';
-import { scaleByWidth } from 'utils/theme';
+import React, { useState, useCallback, useLayoutEffect } from 'react';
+import { View, StyleSheet } from 'react-native';
+import { GiftedChat, IMessage } from 'react-native-gifted-chat';
+import { scaleByHeight, scaleByWidth } from 'utils/theme';
 
 export const Chat = () => {
-  const [messages, setMessages] = useState([]);
-  const [refreshing, setRefreshing] = useState(false);
+  const [messages, setMessages] = useState<IMessage[]>([]);
+  const [newChatMessages, setNewChatMessages] = useState<IMessage[]>([]);
+  const [moreChatsAvailable, setMoreChatsAvailable] = useState<boolean>(true);
+
+  const collectionRef = collection(database, 'chats');
 
   const messageLimit = 25;
 
-  const constraints = [orderBy('createdAt', 'desc'), limit(messageLimit)];
-
-  useEffect(() => {
-    const collectionRef = collection(database, 'chats');
+  useLayoutEffect(() => {
+    const constraints = [orderBy('createdAt', 'desc'), limit(messageLimit)];
     const q = query(collectionRef, ...constraints);
 
     const unsubscribe = onSnapshot(q, querySnapshot => {
@@ -34,8 +36,7 @@ export const Chat = () => {
         })),
       );
     });
-
-    return () => unsubscribe();
+    return unsubscribe;
   }, []);
 
   const onSend = useCallback((messages = []) => {
@@ -53,22 +54,48 @@ export const Chat = () => {
   }, []);
 
   const onLoadEarlier = () => {
-    console.log('first');
+    if (messages.length < messageLimit) return setMoreChatsAvailable(false);
+
+    const lastVisible = newChatMessages.length
+      ? newChatMessages[newChatMessages.length - 1]
+      : messages[messages.length - 1];
+
+    const constraints = [
+      orderBy('createdAt', 'desc'),
+      startAfter(lastVisible.createdAt),
+      limit(messageLimit),
+    ];
+
+    const q = query(collectionRef, ...constraints);
+
+    onSnapshot(q, querySnapshot => {
+      const newMessages = querySnapshot.docs.map(doc => ({
+        _id: doc.data()._id,
+        createdAt: doc.data().createdAt.toDate(),
+        text: doc.data().text,
+        user: doc.data().user,
+      }));
+
+      setNewChatMessages(newMessages);
+
+      if (!newMessages.length) {
+        return setMoreChatsAvailable(false);
+      }
+
+      setMessages(previousMessages =>
+        GiftedChat.append(newMessages, previousMessages),
+      );
+    });
   };
 
   return (
     <View style={styles.container}>
       <GiftedChat
         messages={messages}
-        renderUsernameOnMessage
         showAvatarForEveryMessage
-        loadEarlier
-        listViewProps={{
-          refreshControl: (
-            <RefreshControl refreshing={refreshing} onRefresh={onLoadEarlier} />
-          ),
-        }}
-        // onLoadEarlier={onLoadEarlier}
+        loadEarlier={moreChatsAvailable}
+        infiniteScroll
+        onLoadEarlier={onLoadEarlier}
         onSend={messages => onSend(messages)}
         user={{
           _id: authentication?.currentUser?.email ?? 1,
@@ -84,6 +111,6 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: scaleByWidth(12),
     flex: 1,
-    paddingBottom: 10,
+    paddingBottom: scaleByHeight(10),
   },
 });

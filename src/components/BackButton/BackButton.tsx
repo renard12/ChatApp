@@ -7,10 +7,9 @@ import { scaleByWidth } from 'utils/theme';
 
 type BackButtonProps = {
   color?: string;
-  onPress?: () => void;
 };
 
-export const BackButton = ({ color, onPress }: BackButtonProps) => {
+export const BackButton = ({ color }: BackButtonProps) => {
   const { setUser } = useContext(AuthContext);
 
   const goBack = () => {
